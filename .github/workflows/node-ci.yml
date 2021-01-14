@@ -1,0 +1,101 @@
+name: Node CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  android:
+    runs-on: macos-latest
+    env:
+      CI: 1
+    strategy:
+      matrix:
+        android-api: [28]
+        android-target: [default]
+        node-version: [12, 14]
+    name: "Matrix: Node v${{ matrix.node-version }}; Android API ${{ matrix.android-api }}"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Install node_modules
+        run: |
+          npm ci --prefer-offline --no-audit
+
+      - name: Lint
+        run: |
+          npm run lint
+
+      - name: Run Android tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.android-api }}
+          target: ${{ matrix.android-target }}
+          arch: x86_64
+          profile: pixel
+          avd-name: pixel-${{ matrix.android-api }}
+          script: |
+            ./run-tests.js --platform android --emulator pixel-${{ matrix.android-api }} test/index.js"
+
+  ios:
+    runs-on: macos-latest
+    env:
+      CI: 1
+    strategy:
+      matrix:
+        apple-runtime: ["iOS 14.2"]
+        node-version: [12, 14]
+    name: "Matrix: Node v${{ matrix.node-version }}; ${{ matrix.apple-runtime }}"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Install node_modules
+        run: |
+          npm ci --prefer-offline --no-audit
+
+      - name: Lint
+        run: |
+          npm run lint
+
+      - name: Create and run iOS simulator
+        run: |
+          SIMULATOR_RUNTIME=$(echo "${{ matrix.apple-runtime }}" | sed 's/[ \.]/-/g')
+          SIMULATOR_ID=$(xcrun simctl create "iPhone 11" com.apple.CoreSimulator.SimDeviceType.iPhone-11 com.apple.CoreSimulator.SimRuntime.$SIMULATOR_RUNTIME)
+          echo "IOS_SIMULATOR=$SIMULATOR_ID" >> $GITHUB_ENV
+          xcrun simctl boot $SIMULATOR_ID &
+
+      - name: Run iOS tests
+        run: |
+          ./run-tests.js --platform ios --simulator $IOS_SIMULATOR test/index.js
+
+      - name: Shutdown iOS simulator
+        run: |
+          xcrun simctl shutdown $IOS_SIMULATOR
