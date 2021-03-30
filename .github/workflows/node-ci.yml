@@ -7,31 +7,50 @@ on:
     branches: [master]
 
 jobs:
-  android:
+  prepare:
     runs-on: macos-latest
-    env:
-      CI: 1
-    strategy:
-      matrix:
-        android-api: [28]
-        android-target: [default]
-        node-version: [12, 14]
-    name: "Matrix: Node v${{ matrix.node-version }}; Android API ${{ matrix.android-api }}"
+    name: "Prepare"
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 14
         uses: actions/setup-node@v1
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 14
 
       - name: Cache node_modules
         uses: actions/cache@v2
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-npm-
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: node_modules-
+
+      - name: Install node_modules
+        run: |
+          npm ci --prefer-offline --no-audit
+
+  android:
+    needs: prepare
+    runs-on: macos-latest
+    env:
+      REACT_NATIVE_VERSION: "0.63.4"
+    name: "Android"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js 14
+        uses: actions/setup-node@v1
+        with:
+          node-version: 14
+
+      - name: Cache node_modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: node_modules-
 
       - name: Install node_modules
         run: |
@@ -40,42 +59,59 @@ jobs:
       - name: Lint
         run: |
           npm run lint
+
+      - name: Cache Android build
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android/build-cache
+          key: ${{ runner.os }}-gradle-rn-${{ env.REACT_NATIVE_VERSION }}
+
+      - name: Inject test app path into a job-wide environment variable
+        run: |
+          DIR=~/rn-android-test-app
+          echo "REACT_NATIVE_TEST_APP=$DIR" >> $GITHUB_ENV
+
+      - name: Cache React Native test app
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.REACT_NATIVE_TEST_APP }}
+          key: ${{ runner.os }}-rn-android-${{ env.REACT_NATIVE_VERSION }}
 
       - name: Run Android tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.android-api }}
-          target: ${{ matrix.android-target }}
+          api-level: 28
+          target: default
           arch: x86_64
           profile: pixel
-          avd-name: pixel-${{ matrix.android-api }}
+          avd-name: google-pixel
           script: |
-            ./run-tests.js --platform android --emulator pixel-${{ matrix.android-api }} test/index.js"
+            ./run-tests.js --platform android test/index.js
 
   ios:
+    needs: prepare
     runs-on: macos-latest
     env:
-      CI: 1
-    strategy:
-      matrix:
-        apple-runtime: ["iOS 14.2"]
-        node-version: [12, 14]
-    name: "Matrix: Node v${{ matrix.node-version }}; ${{ matrix.apple-runtime }}"
+      REACT_NATIVE_VERSION: "0.62.0"
+    name: "iOS"
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up Node.js ${{ matrix.node-version }}
+      - name: Set up Node.js 14
         uses: actions/setup-node@v1
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 14
 
       - name: Cache node_modules
         uses: actions/cache@v2
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-npm-
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: node_modules-
 
       - name: Install node_modules
         run: |
@@ -85,17 +121,50 @@ jobs:
         run: |
           npm run lint
 
+      # - name: List environment capabilities
+      #   run: |
+      #     xcversion --version
+      #     xcodebuild -version
+      #     xcrun simctl list
+      #     xcversion select 12.1
+
       - name: Create and run iOS simulator
+        id: setup-ios-simulator
         run: |
-          SIMULATOR_RUNTIME=$(echo "${{ matrix.apple-runtime }}" | sed 's/[ \.]/-/g')
+          SIMULATOR_RUNTIME=$(echo "iOS 14.4" | sed 's/[ \.]/-/g')
           SIMULATOR_ID=$(xcrun simctl create "iPhone 11" com.apple.CoreSimulator.SimDeviceType.iPhone-11 com.apple.CoreSimulator.SimRuntime.$SIMULATOR_RUNTIME)
-          echo "IOS_SIMULATOR=$SIMULATOR_ID" >> $GITHUB_ENV
+          echo "::set-output name=simulator_id::$SIMULATOR_ID"
           xcrun simctl boot $SIMULATOR_ID &
+
+      - name: Cache iOS build
+        uses: actions/cache@v2
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/Test-*
+          key: ${{ runner.os }}-xcodebuild-rn-${{ env.REACT_NATIVE_VERSION }}
+
+      - name: Cache pods and repositories
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ runner.os }}-cocoapods-rn-${{ env.REACT_NATIVE_VERSION }}
+
+      - name: Inject test app path into a job-wide environment variable
+        run: |
+          DIR=~/rn-ios-test-app
+          echo "REACT_NATIVE_TEST_APP=$DIR" >> $GITHUB_ENV
+
+      - name: Cache React Native test app
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.REACT_NATIVE_TEST_APP }}
+          key: ${{ runner.os }}-rn-ios-${{ env.REACT_NATIVE_VERSION }}
 
       - name: Run iOS tests
         run: |
-          ./run-tests.js --platform ios --simulator $IOS_SIMULATOR test/index.js
+          ./run-tests.js --platform ios --rn ${{ env.REACT_NATIVE_VERSION }} test/index.js
 
       - name: Shutdown iOS simulator
         run: |
-          xcrun simctl shutdown $IOS_SIMULATOR
+          xcrun simctl shutdown ${{ steps.setup-ios-simulator.outputs.simulator_id }}
