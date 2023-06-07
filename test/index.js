@@ -553,7 +553,7 @@ test("request", (t) => {
         t.isNot(clone.headers, req.headers);
         t.notOk(req.bodyUsed);
 
-        const bodies = await Promise.all([clone.text(), req.clone().text()]);
+        const bodies = await Promise.all([clone.text(), req.text()]);
 
         t.eq(bodies, ["I work out", "I work out"]);
     });
@@ -1864,14 +1864,27 @@ test("fetch method", (t) => {
                 reactNative: { textStreaming: true },
             });
             const clone = res.clone();
-            const stream = await clone.body;
-            const text = new TextDecoder().decode(await drainStream(stream));
+
+            const resStream = await res.body;
+            const cloneStream = await clone.body;
+            const resText = new TextDecoder().decode(
+                await drainStream(resStream)
+            );
+            const cloneText = new TextDecoder().decode(
+                await drainStream(cloneStream)
+            );
 
             t.ok(
-                stream instanceof ReadableStream,
+                resStream instanceof ReadableStream,
                 "Response implements streaming body"
             );
-            t.eq(text, "Hello world!");
+            t.eq(resText, "Hello world!");
+
+            t.ok(
+                cloneStream instanceof ReadableStream,
+                "Response implements streaming body"
+            );
+            t.eq(cloneText, "Hello world!");
         });
 
         t.test("cloning blob response", async (t) => {
@@ -1882,8 +1895,11 @@ test("fetch method", (t) => {
                 },
             });
             const clone = res.clone();
-            const json = await clone.json();
-            t.eq(json.headers.accept, "application/json");
+            const resJson = await res.json();
+            const cloneJson = await clone.json();
+
+            t.eq(resJson.headers.accept, "application/json");
+            t.eq(cloneJson.headers.accept, "application/json");
         });
 
         t.test("cloning array buffer response", async (t) => {
@@ -1894,15 +1910,28 @@ test("fetch method", (t) => {
                 },
             });
             const clone = res.clone();
-            const buf = await clone.arrayBuffer();
+            const resBuf = await res.arrayBuffer();
+            const cloneBuf = await clone.arrayBuffer();
 
-            t.ok(buf instanceof ArrayBuffer, "buf is an ArrayBuffer instance");
-            t.eq(buf.byteLength, 256, "buf.byteLength is correct");
+            t.ok(
+                resBuf instanceof ArrayBuffer,
+                "buf is an ArrayBuffer instance"
+            );
+            t.eq(resBuf.byteLength, 256, "buf.byteLength is correct");
+
+            t.ok(
+                cloneBuf instanceof ArrayBuffer,
+                "buf is an ArrayBuffer instance"
+            );
+            t.eq(cloneBuf.byteLength, 256, "buf.byteLength is correct");
 
             const expected = Array.from({ length: 256 }, (_, i) => i);
-            const actual = Array.from(new Uint8Array(buf));
 
-            t.eq(actual, expected);
+            const resActual = Array.from(new Uint8Array(resBuf));
+            const cloneActual = Array.from(new Uint8Array(cloneBuf));
+
+            t.eq(resActual, expected);
+            t.eq(cloneActual, expected);
         });
     });
 });

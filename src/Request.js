@@ -46,7 +46,7 @@ class Request {
         this.signal = request.signal;
         this.headers = new Headers(options.headers ?? request.headers);
 
-        if (!options.body && request._body._bodyInit) {
+        if (options.body === undefined && request._body._bodyInit) {
             this._body = new Body(request._body._bodyInit);
             request._body.bodyUsed = true;
         }
@@ -85,7 +85,14 @@ class Request {
     }
 
     clone() {
-        return new Request(this, { body: this._body._bodyInit });
+        if (this.bodyUsed) {
+            throw new TypeError("Already read");
+        }
+
+        const newRequest = new Request(this, { body: null });
+        newRequest._body = this._body.clone();
+
+        return newRequest;
     }
 
     blob() {

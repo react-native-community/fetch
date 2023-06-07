@@ -6,6 +6,7 @@ class Body {
         this._bodyInit = body;
 
         if (!body) {
+            this._bodyNull = true;
             this._bodyText = "";
             return this;
         }
@@ -179,6 +180,10 @@ class Body {
     }
 
     get body() {
+        if (this._bodyNull) {
+            return null;
+        }
+
         if (this._bodyReadableStream) {
             return this._bodyReadableStream;
         }
@@ -227,6 +232,16 @@ class Body {
                 controller.close();
             },
         });
+    }
+
+    clone() {
+        if (this._bodyReadableStream) {
+            const [stream1, stream2] = this._bodyReadableStream.tee();
+            this._bodyReadableStream = stream1;
+            return new Body(stream2);
+        } else {
+            return new Body(this._bodyInit);
+        }
     }
 }
 

@@ -21,12 +21,19 @@ class Response {
     }
 
     clone() {
-        return new Response(this._body._bodyInit, {
+        if (this.bodyUsed) {
+            throw new TypeError("Already read");
+        }
+
+        const newResponse = new Response(null, {
             status: this.status,
             statusText: this.statusText,
             headers: new Headers(this.headers),
             url: this.url,
         });
+        newResponse._body = this._body.clone();
+
+        return newResponse;
     }
 
     blob() {
