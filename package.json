@@ -3,6 +3,7 @@
   "description": "A fetch API polyfill for React Native with text streaming support.",
   "version": "3.0.0",
   "main": "fetch.js",
+  "sideEffects": false,
   "author": {
     "name": "André Costa Lima",
     "email": "andreclima.pt@gmail.com",
